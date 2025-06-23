@@ -2,7 +2,7 @@ import os
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-from backend.config import SCOPES, OAUTH_CREDENTIALS_FILE
+from config import SCOPES, OAUTH_CREDENTIALS_FILE
 
 def get_authenticated_service():
     creds = None
