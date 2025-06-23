@@ -4,7 +4,7 @@ import logging
 from youtube.auth import get_authenticated_service
 from youtube.chat import get_live_chat_id, poll_chat_messages, send_message
 from gemini.responder import generate_response
-from backend.config import TARGET_CHANNEL_ID
+from config import TARGET_CHANNEL_ID
 
 
 def monitor_live_stream():
