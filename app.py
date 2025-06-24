@@ -52,6 +52,22 @@ def handle_send_message():
         logging.exception(f"Failed to send message via API: {e}")
         return jsonify({'error': 'An internal error occurred.'}), 500
 
+@app.route('/api/live')
+def get_live_status():
+    from youtube.auth import get_authenticated_service
+    from youtube.chat import get_live_chat_id
+    from config import TARGET_CHANNEL_ID
+
+    youtube = get_authenticated_service()
+    live_chat_id, video_id = get_live_chat_id(youtube, TARGET_CHANNEL_ID)
+
+    if not video_id:
+        return jsonify({"live": False})
+    return jsonify({
+        "live": True,
+        "videoId": video_id
+    })
+
 # ★★★★★ ここから分析用APIを新しく追加 ★★★★★
 @app.route('/api/analyze-user', methods=['POST'])
 def handle_analyze_user():
