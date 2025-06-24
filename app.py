@@ -4,7 +4,6 @@ import threading
 import logging
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-
 from bot_runner import start_bot
 from youtube.live_monitor import get_latest_logs
 from youtube.chat import send_message
