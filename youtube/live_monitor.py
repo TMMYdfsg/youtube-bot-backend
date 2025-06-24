@@ -1,4 +1,4 @@
-# youtube/live_monitor.py (自動アナウンス機能 統合版)
+# youtube/live_monitor.py (ライブ配信の動画IDを共有する機能を追加・完全版)
 
 import random
 import time
@@ -6,9 +6,9 @@ import datetime
 import logging
 from youtube.auth import get_authenticated_service
 from youtube.chat import get_live_chat_id, poll_chat_messages, send_message
-from gemini.responder import generate_response
-from config import TARGET_CHANNEL_ID
 import shared_state
+from config import TARGET_CHANNEL_ID
+from gemini.responder import generate_response
 
 # ----------------------------------------------------------------
 # ヘルパー関数群（先に定義しておく）
@@ -49,10 +49,12 @@ def monitor_live_stream():
     if not live_chat_id:
         logging.info("ライブ配信なし。リトライします...")
         shared_state.CURRENT_LIVE_CHAT_ID = None
+        shared_state.CURRENT_VIDEO_ID = None
         time.sleep(30)
         return
 
     shared_state.CURRENT_LIVE_CHAT_ID = live_chat_id
+    shared_state.CURRENT_VIDEO_ID = video_id
     logging.info(f"ライブ検出: VideoID={video_id}")
 
     # --- 自動アナウンス用の設定 (ループ開始前に定義) ---
@@ -74,13 +76,13 @@ def monitor_live_stream():
     # --- ここからがメインの無限ループ ---
     while True:
         try:
-            # 1. 自動アナウンスの時間をチェック (ループの先頭で)
+            # 1. 自動アナウンスの時間をチェック
             current_time = time.time()
             if (current_time - last_announcement_time) > ANNOUNCEMENT_INTERVAL:
                 announcement = random.choice(ANNOUNCEMENT_MESSAGES)
                 send_message(youtube, live_chat_id, announcement)
                 append_log("Bot", "（自動アナウンス）", announcement)
-                last_announcement_time = current_time # タイマーをリセット
+                last_announcement_time = current_time
 
             # 2. 配信終了をチェック
             if is_live_ended(youtube, video_id):
@@ -89,6 +91,7 @@ def monitor_live_stream():
                 append_log("Bot", "（終了）", end_message)
                 logging.info("配信終了を検出。Bot停止。")
                 shared_state.CURRENT_LIVE_CHAT_ID = None
+                shared_state.CURRENT_VIDEO_ID = None
                 break
 
             # 3. チャットを取得して応答
@@ -98,24 +101,28 @@ def monitor_live_stream():
                 seen_msg_ids.add(msg_id)
                 
                 response_text = ""
-                # ここからコマンド判定
+                # コマンド判定
                 if text.startswith("!こんにちは"):
                     response_text = f"{author}さん、こんにちは！"
                     send_message(youtube, live_chat_id, response_text)
-                # ... (他のコマンドも同様) ...
+                elif text.startswith("!今何時"):
+                    now = datetime.datetime.now().strftime("%H:%M:%S")
+                    response_text = f"{author}さん、今は {now} です！"
+                    send_message(youtube, live_chat_id, response_text)
                 elif text.startswith("!占い"):
                     fortunes = ["大吉 ✨", "中吉 😊", "小吉 🙂", "吉 😉", "末吉 🤔", "凶 😥", "大凶 😱"]
                     result = random.choice(fortunes)
                     response_text = f"{author}さんの今日の運勢は...【{result}】です！"
                     send_message(youtube, live_chat_id, response_text)
                 else:
+                    # AIによる応答
                     response_text = generate_response(text)
                     send_message(youtube, live_chat_id, f"{author}さん：{response_text}")
                 
                 if response_text:
                     append_log(author, text, response_text)
 
-            time.sleep(10) # APIの負荷を考慮して少し長めに待機
+            time.sleep(10)
 
         except Exception as e:
             logging.exception(f"チャット監視エラー: {e}")
