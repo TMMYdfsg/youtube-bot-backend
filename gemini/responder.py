@@ -1,4 +1,4 @@
-# gemini/responder.py
+# gemini/responder.py (f-stringの文法エラーを修正した最終版)
 
 import google.generativeai as genai
 from config import GEMINI_API_KEY
@@ -14,13 +14,16 @@ def generate_response(prompt: str) -> str:
     except Exception as e:
         return "すみません、現在応答できません。"
 
-# ★★★ ユーザー分析専用の関数を新しく追加 ★★★
 def analyze_user_comments(comments: list[str]) -> str:
     """
     特定のユーザーのコメントリストを受け取り、その傾向を分析・要約する
     """
     if not comments:
         return "分析対象のコメントがありません。"
+
+    # ★★★ f-stringの文法エラーを修正 ★★★
+    # まず、コメントリストを改行で連結した文字列を作成します
+    comment_list_str = "\n- ".join(comments)
 
     # AIへの専門的な命令（プロンプト）
     analysis_prompt = f"""
@@ -30,7 +33,7 @@ def analyze_user_comments(comments: list[str]) -> str:
     その人物像を3〜4行程度の短いレポートにまとめてください。
 
     # コメントリスト:
-    - {"\n- ".join(comments)}
+- {comment_list_str}
     """
     try:
         response = model.generate_content(analysis_prompt)
