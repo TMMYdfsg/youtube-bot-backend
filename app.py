@@ -1,4 +1,4 @@
-# app.py (パスキー認証API付き 完成版)
+# app.py (最終デプロイ版)
 
 import os
 import threading
@@ -24,10 +24,21 @@ from database import init_db, DATABASE_FILE
 # --- 初期設定 ---
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key-for-dev')
-CORS(app, supports_credentials=True)
-RP_ID = "localhost"  # ★ デプロイ時はNetlifyのドメイン名に変更
+
+# ★★★★★ ここからが最重要設定 ★★★★★
+
+# NetlifyのフロントエンドのURL
+FRONTEND_URL = "https://urausamaruch-bot.netlify.app"
+# Netlifyのドメイン名（ポート番号やプロトコルは不要）
+RELYING_PARTY_ID = "urausamaruch-bot.netlify.app"
+
+# CORS設定: 指定したURLからの通信のみを許可する
+CORS(app, origins=[FRONTEND_URL], supports_credentials=True)
+
+# パスキー認証用の設定
+RP_ID = RELYING_PARTY_ID
 RP_NAME = "Urausamaru Bot"
-ORIGIN = "http://localhost:3000" # ★ デプロイ時はNetlifyのURLに変更
+ORIGIN = FRONTEND_URL
 
 # --- ログインしているかチェックする「門番」機能 ---
 def login_required(f):
