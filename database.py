@@ -5,6 +5,31 @@ import logging
 
 DATABASE_FILE = "chat_history.db"
 
+def get_recent_comments_by_user(username: str, limit: int = 20) -> list[str]:
+    """
+    特定ユーザー名のコメントを最新順で取得
+    """
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT message FROM chat_logs
+            WHERE author = ?
+            AND log_type = 'user'
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (username, limit)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        logging.error(f"ユーザーコメントの取得中にエラー: {e}")
+        return []
+
+
 def init_db():
     """データベースとテーブルを初期化する"""
     try:
