@@ -3,7 +3,6 @@
 import os
 import threading
 import logging
-import base64
 import sqlite3
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
@@ -15,7 +14,6 @@ from webauthn import (
     verify_authentication_response,
 )
 from webauthn.helpers.structs import RegistrationCredential, AuthenticationCredential
-from webauthn.helpers.cose import COSEAlgorithmIdentifier
 
 from bot_runner import start_bot
 from youtube.live_monitor import get_latest_logs
@@ -35,13 +33,10 @@ ORIGIN = "http://localhost:3000" # ★ デプロイ時はNetlifyのURLに変更
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session: # 'logged_in'から'user_id'に変更
+        if 'user_id' not in session:
             return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
     return decorated_function
-
-# --- 従来のID/パスワード認証API ---
-# (省略... 必要なら残す)
 
 # --- ★★★ パスキー認証API ★★★ ---
 @app.route('/api/passkey/register-request', methods=['POST'])
@@ -74,7 +69,7 @@ def passkey_register_verify():
 
     try:
         verification = verify_registration_response(
-            credential=RegistrationCredential.parse_raw(body),
+            credential=RegistrationCredential.model_validate(body),
             expected_challenge=challenge.encode('utf-8'),
             expected_origin=ORIGIN,
             expected_rp_id=RP_ID,
@@ -102,8 +97,10 @@ def passkey_login_request():
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM user_credentials")
-    credentials = [{"id": row[0]} for row in cursor.fetchall()]
+    credentials_rows = cursor.fetchall()
     conn.close()
+    
+    credentials = [{"type": "public-key", "id": row[0]} for row in credentials_rows]
 
     options = generate_authentication_options(rp_id=RP_ID, allow_credentials=credentials)
     session['challenge'] = options.challenge
@@ -125,7 +122,7 @@ def passkey_login_verify():
 
     try:
         verification = verify_authentication_response(
-            credential=AuthenticationCredential.parse_raw(body),
+            credential=AuthenticationCredential.model_validate(body),
             expected_challenge=challenge.encode('utf-8'),
             expected_origin=ORIGIN,
             expected_rp_id=RP_ID,
@@ -143,7 +140,48 @@ def passkey_login_verify():
         conn.close()
         return jsonify({"error": f"Verification failed: {e}"}), 400
 
-# ... (他のAPIエンドポイントには @login_required を付ける) ...
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('user_id', None)
+    return jsonify({'success': True})
+
+@app.route('/api/check-auth')
+def check_auth():
+    is_logged_in = 'user_id' in session
+    return jsonify({'is_logged_in': is_logged_in})
+
+# --- 保護されたAPIエンドポイント ---
+@app.route("/")
+def health_check():
+    return jsonify({"status": "ok", "message": "YouTube Bot Running"})
+
+@app.route("/api/status")
+@login_required
+def bot_status():
+    is_live = shared_state.CURRENT_LIVE_CHAT_ID is not None
+    video_id = shared_state.CURRENT_VIDEO_ID
+    return jsonify({"bot_running": True, "is_live": is_live, "video_id": video_id})
+
+@app.route("/api/chat-log")
+@login_required
+def chat_log():
+    return jsonify(get_latest_logs())
+
+@app.route('/api/send-message', methods=['POST'])
+@login_required
+def handle_send_message():
+    data = request.get_json()
+    message = data.get('message')
+    if not message: return jsonify({'error': 'Message cannot be empty.'}), 400
+    chat_id = shared_state.CURRENT_LIVE_CHAT_ID
+    youtube = shared_state.YOUTUBE_SERVICE
+    if not chat_id or not youtube: return jsonify({'error': 'Bot is not currently in a live chat session.'}), 404
+    try:
+        send_message(youtube, chat_id, message)
+        return jsonify({'success': True, 'message': 'Message sent successfully.'})
+    except Exception as e:
+        logging.exception(f"Failed to send message via API: {e}")
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 if __name__ == "__main__":
     init_db()
