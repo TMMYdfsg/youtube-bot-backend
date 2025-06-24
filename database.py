@@ -5,20 +5,14 @@ import logging
 
 DATABASE_FILE = "chat_history.db"
 
-
 def init_db():
-    """
-    データベースとテーブルを初期化（存在しない場合のみ作成）する関数
-    """
+    """データベースとテーブルを初期化する"""
     try:
-        # データベースに接続（ファイルがなければ自動的に作成される）
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
-        # chat_logs テーブルを作成
-        # IF NOT EXISTS をつけることで、すでにテーブルが存在する場合は何もしない
-        cursor.execute(
-            """
+        # チャットログ用のテーブル（変更なし）
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             log_type TEXT NOT NULL,
@@ -26,12 +20,32 @@ def init_db():
             message TEXT NOT NULL,
             timestamp TEXT NOT NULL
         )
-        """
+        """)
+        
+        # ★★★ ユーザー情報を保存するテーブルを追加 ★★★
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL
         )
+        """)
+
+        # ★★★ パスキー情報を保存するテーブルを追加 ★★★
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_credentials (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            public_key BLOB NOT NULL,
+            sign_count INTEGER NOT NULL,
+            transports TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """)
 
         conn.commit()
         conn.close()
         logging.info(f"データベース '{DATABASE_FILE}' の初期化が完了しました。")
-
+    
     except Exception as e:
         logging.error(f"データベースの初期化中にエラーが発生しました: {e}")
+
