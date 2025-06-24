@@ -1,7 +1,7 @@
 # app.py
 
 import threading
-import logging # loggingをインポート（エラー記録のため）
+import logging
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -14,49 +14,57 @@ from database import init_db
 app = Flask(__name__)
 CORS(app)
 
+
 @app.route("/")
 def health_check():
     return jsonify({"status": "ok", "message": "YouTube Bot Running"})
 
+
 @app.route("/api/status")
 def bot_status():
-    # ライブ中かどうかに応じて、より詳細なステータスを返すことも可能
     is_live = shared_state.CURRENT_LIVE_CHAT_ID is not None
-    return jsonify({"bot_running": True, "is_live": is_live})
+    video_id = shared_state.CURRENT_VIDEO_ID
+    return jsonify({"bot_running": True, "is_live": is_live, "video_id": video_id})
+
 
 @app.route("/api/chat-log")
 def chat_log():
     return jsonify(get_latest_logs())
 
-# test-geminiのエンドポイントは今回は省略（必要なら残してください）
 
-@app.route('/api/send-message', methods=['POST'])
+@app.route("/api/send-message", methods=["POST"])
 def handle_send_message():
     data = request.get_json()
-    if not data or 'message' not in data:
-        return jsonify({'error': 'Message key is missing or data is not a valid JSON.'}), 400
+    if not data or "message" not in data:
+        return (
+            jsonify({"error": "Message key is missing or data is not a valid JSON."}),
+            400,
+        )
 
-    message = data.get('message')
+    message = data.get("message")
 
     if not message:
-        return jsonify({'error': 'Message cannot be empty.'}), 400
+        return jsonify({"error": "Message cannot be empty."}), 400
 
     chat_id = shared_state.CURRENT_LIVE_CHAT_ID
     youtube = shared_state.YOUTUBE_SERVICE
 
     if not chat_id or not youtube:
-        return jsonify({'error': 'Bot is not currently in a live chat session.'}), 404
+        return jsonify({"error": "Bot is not currently in a live chat session."}), 404
 
     try:
         send_message(youtube, chat_id, message)
-        return jsonify({'success': True, 'message': 'Message sent successfully.'})
+        return jsonify({"success": True, "message": "Message sent successfully."})
     except Exception as e:
-        # エラー内容をサーバーのログにも記録する
         logging.exception(f"Failed to send message via API: {e}")
-        return jsonify({'error': 'An internal error occurred while sending the message.'}), 500
+        return (
+            jsonify({"error": "An internal error occurred while sending the message."}),
+            500,
+        )
+
 
 if __name__ == "__main__":
-    init_db()  # ★★★ 2. アプリケーション起動時にDBを初期化 ★★★
+    init_db()
 
     bot_thread = threading.Thread(target=start_bot, daemon=True)
     bot_thread.start()

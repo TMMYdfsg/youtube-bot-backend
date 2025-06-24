@@ -1,0 +1,20 @@
+# Environment variables & Secrets
+.env
+token.json
+client_secret.json
+
+# Python cache
+__pycache__/
+
+# Database file
+chat_history.db
+
+# Log files
+logs/
+
+# IDE/Editor specific
+.vscode/
+.idea/
+
+# pytest cache
+.pytest_cache
