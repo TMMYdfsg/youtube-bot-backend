@@ -68,6 +68,14 @@ def get_live_status():
         "videoId": video_id
     })
 
+@app.route('/api/test-gemini', methods=['POST'])
+def test_gemini():
+    from gemini.responder import generate_response
+    data = request.get_json()
+    prompt = data.get("message")
+    result = generate_response(prompt)
+    return jsonify({"response": result})
+
 # ★★★★★ ここから分析用APIを新しく追加 ★★★★★
 @app.route('/api/analyze-user', methods=['POST'])
 def handle_analyze_user():
