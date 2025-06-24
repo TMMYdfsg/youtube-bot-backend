@@ -1,0 +1,10 @@
+# backend/.env ファイル
+
+# ご自身のGemini APIキーをここに貼り付けてください
+GEMINI_API_KEY="AIzaSyCv43URMSV34WQMGHq-5xA92hNiim3MBsQ"
+
+# 監視対象のYouTubeチャンネルID
+TARGET_CHANNEL_ID="UCMsJqq8nIYQax1c2ibScuXQ"
+
+# Flaskのセッション機能のための秘密鍵（あなただけのランダムな文字列にしてください）
+SECRET_KEY="Urausamaru-Bot-rukasan-dausuki-Key"
