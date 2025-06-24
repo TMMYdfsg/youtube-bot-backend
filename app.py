@@ -27,9 +27,9 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key-for-dev')
 
 # ★★★★★ ここからが最重要設定 ★★★★★
 
-# NetlifyのフロントエンドのURL
+# Netlifyで公開したフロントエンドのURL
 FRONTEND_URL = "https://urausamaruch-bot.netlify.app"
-# Netlifyのドメイン名（ポート番号やプロトコルは不要）
+# Netlifyのドメイン名（パスキー認証で利用）
 RELYING_PARTY_ID = "urausamaruch-bot.netlify.app"
 
 # CORS設定: 指定したURLからの通信のみを許可する
@@ -40,6 +40,9 @@ RP_ID = RELYING_PARTY_ID
 RP_NAME = "Urausamaru Bot"
 ORIGIN = FRONTEND_URL
 
+# ★★★★★ ここまで ★★★★★
+
+
 # --- ログインしているかチェックする「門番」機能 ---
 def login_required(f):
     @wraps(f)
@@ -49,7 +52,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- ★★★ パスキー認証API ★★★ ---
+# --- パスキー認証API ---
 @app.route('/api/passkey/register-request', methods=['POST'])
 def passkey_register_request():
     username = request.json.get('username')
@@ -59,11 +62,14 @@ def passkey_register_request():
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if user: return jsonify({"error": "Username already exists"}), 400
+    if user:
+        conn.close()
+        return jsonify({"error": "Username already exists"}), 400
 
     user_id = os.urandom(16).hex()
     session['registration_user_id'] = user_id
     session['registration_username'] = username
+    conn.close()
 
     options = generate_registration_options(
         rp_id=RP_ID, rp_name=RP_NAME, user_id=user_id, user_name=username
@@ -85,7 +91,6 @@ def passkey_register_verify():
             expected_origin=ORIGIN,
             expected_rp_id=RP_ID,
         )
-
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO users (id, username) VALUES (?, ?)", (user_id, username))
@@ -95,10 +100,8 @@ def passkey_register_verify():
         )
         conn.commit()
         conn.close()
-
         session.pop('registration_user_id', None)
         session.pop('registration_username', None)
-
         return jsonify({"verified": True})
     except Exception as e:
         return jsonify({"error": f"Verification failed: {e}"}), 400
@@ -108,11 +111,8 @@ def passkey_login_request():
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM user_credentials")
-    credentials_rows = cursor.fetchall()
+    credentials = [{"type": "public-key", "id": row[0]} for row in cursor.fetchall()]
     conn.close()
-    
-    credentials = [{"type": "public-key", "id": row[0]} for row in credentials_rows]
-
     options = generate_authentication_options(rp_id=RP_ID, allow_credentials=credentials)
     session['challenge'] = options.challenge
     return jsonify(options.to_dict())
@@ -122,15 +122,14 @@ def passkey_login_verify():
     body = request.get_json()
     credential_id = body.get('id')
     challenge = session.get('challenge')
-
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, public_key, sign_count FROM user_credentials WHERE id = ?", (credential_id,))
     cred_info = cursor.fetchone()
-    if not cred_info: return jsonify({"error": "Credential not found"}), 404
-    
+    if not cred_info:
+        conn.close()
+        return jsonify({"error": "Credential not found"}), 404
     user_id, public_key, sign_count = cred_info
-
     try:
         verification = verify_authentication_response(
             credential=AuthenticationCredential.model_validate(body),
@@ -140,12 +139,10 @@ def passkey_login_verify():
             credential_public_key=public_key,
             credential_current_sign_count=sign_count,
         )
-        
         cursor.execute("UPDATE user_credentials SET sign_count = ? WHERE id = ?", (verification.new_sign_count, credential_id))
         conn.commit()
         conn.close()
-
-        session['user_id'] = user_id # ログイン状態をセッションに保存
+        session['user_id'] = user_id
         return jsonify({"verified": True})
     except Exception as e:
         conn.close()
@@ -157,15 +154,12 @@ def logout():
     return jsonify({'success': True})
 
 @app.route('/api/check-auth')
+@login_required
 def check_auth():
     is_logged_in = 'user_id' in session
     return jsonify({'is_logged_in': is_logged_in})
 
 # --- 保護されたAPIエンドポイント ---
-@app.route("/")
-def health_check():
-    return jsonify({"status": "ok", "message": "YouTube Bot Running"})
-
 @app.route("/api/status")
 @login_required
 def bot_status():
@@ -198,4 +192,4 @@ if __name__ == "__main__":
     init_db()
     bot_thread = threading.Thread(target=start_bot, daemon=True)
     bot_thread.start()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)), debug=False)
