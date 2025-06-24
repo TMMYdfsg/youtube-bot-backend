@@ -52,6 +52,39 @@ def handle_send_message():
         logging.exception(f"Failed to send message via API: {e}")
         return jsonify({'error': 'An internal error occurred.'}), 500
 
+# ★★★★★ ここから分析用APIを新しく追加 ★★★★★
+@app.route('/api/analyze-user', methods=['POST'])
+def handle_analyze_user():
+    data = request.get_json()
+    author_name = data.get('author')
+    if not author_name:
+        return jsonify({'error': 'Author name is required'}), 400
+
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        # 'user'タイプのログから、指定された発言者のコメントのみを最大100件取得
+        cursor.execute(
+            "SELECT message FROM chat_logs WHERE log_type = 'user' AND author = ? ORDER BY timestamp DESC LIMIT 100",
+            (author_name,)
+        )
+        comments = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        if not comments:
+            return jsonify({'analysis': f'"{author_name}"さんのコメントは見つかりませんでした。'})
+
+        # 取得したコメントをAIに渡して分析させる
+        analysis_result = analyze_user_comments(comments)
+        
+        return jsonify({'analysis': analysis_result})
+
+    except Exception as e:
+        logging.error(f"ユーザー分析中にエラー: {e}")
+        return jsonify({'error': 'An internal error occurred during analysis.'}), 500
+# ★★★★★ ここまで追加 ★★★★★
+
+
 if __name__ == "__main__":
     init_db()
     bot_thread = threading.Thread(target=start_bot, daemon=True)
