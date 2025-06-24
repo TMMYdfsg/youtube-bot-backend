@@ -128,10 +128,15 @@ def monitor_live_stream():
                     send_message(youtube, live_chat_id, response_text)
                     append_log("bot", "Bot", response_text)
                 elif not text.startswith("!"):
-                    ai_response = generate_response(text)
-                    full_response = f"{author}さん：{ai_response}"
-                    send_message(youtube, live_chat_id, full_response)
-                    append_log("bot", "Bot", full_response)
+                    ai_response = generate_response(text).strip()
+                    if not ai_response:
+                        ai_response = "すみません、うまくお答えできませんでした。"
+
+                        full_response = f"{author}さん：{ai_response}"
+                        logging.info(f"送信しようとしているメッセージ: {full_response}")
+                        send_message(youtube, live_chat_id, full_response)
+                append_log("bot", "Bot", full_response)
+
             time.sleep(5)
         except Exception as e:
             logging.exception(f"チャット監視エラー: {e}")
