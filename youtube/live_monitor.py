@@ -1,3 +1,5 @@
+# youtube/live_monitor.py
+
 import random
 import time
 import datetime
@@ -6,50 +8,67 @@ from youtube.auth import get_authenticated_service
 from youtube.chat import get_live_chat_id, poll_chat_messages, send_message, is_live_ended
 from gemini.responder import generate_response
 from config import TARGET_CHANNEL_ID
+from shared_state import shared_state  # ★★★ 1. 共有ファイルをインポート
 
 def monitor_live_stream():
     youtube = get_authenticated_service()
+    shared_state.YOUTUBE_SERVICE = youtube  # ★★★ 2. 共有ファイルにサービスを保存
+
     live_chat_id, video_id = get_live_chat_id(youtube, TARGET_CHANNEL_ID)
 
     if not live_chat_id:
         logging.info("ライブ配信なし。リトライします...")
+        shared_state.CURRENT_LIVE_CHAT_ID = None  # ★★★ 3. 共有IDをクリア
         time.sleep(30)
         return
 
+    shared_state.CURRENT_LIVE_CHAT_ID = live_chat_id  # ★★★ 4. 共有ファイルに現在のチャットIDを保存
     logging.info(f"ライブ検出: VideoID={video_id}")
-    send_message(youtube, live_chat_id, "🎉 Botが参加しました！こんにちは！")
+    
+    # 開始の挨拶
+    start_message = "🎉 Botが参加しました！こんにちは！"
+    send_message(youtube, live_chat_id, start_message)
+    append_log("Bot", "（参加）", start_message) # ★★★ 5. ログを記録
 
     seen_msg_ids = set()
 
     while True:
         try:
-            # ✅ 配信が終了していないか確認
             if is_live_ended(youtube, video_id):
-                send_message(
-                    youtube,
-                    live_chat_id,
-                    "🎤 配信おつかれさまでした！また次回お会いしましょう！",
-                )
+                end_message = "🎤 配信おつかれさまでした！また次回お会いしましょう！"
+                send_message(youtube, live_chat_id, end_message)
+                append_log("Bot", "（終了）", end_message) # ★★★ 5. ログを記録
                 logging.info("配信終了を検出。Bot停止。")
+                shared_state.CURRENT_LIVE_CHAT_ID = None # ★★★ 3. 共有IDをクリア
                 break
 
-            # チャット取得＆応答処理
             messages = poll_chat_messages(youtube, live_chat_id)
             for msg_id, author, text in messages:
                 if msg_id in seen_msg_ids:
                     continue
                 seen_msg_ids.add(msg_id)
+                
+                response_text = "" # Botの返信を格納する変数
 
                 if text.startswith("!こんにちは"):
-                    send_message(youtube, live_chat_id, f"{author}さん、こんにちは！")
+                    response_text = f"{author}さん、こんにちは！"
+                    send_message(youtube, live_chat_id, response_text)
                 elif text.startswith("!今何時"):
                     now = datetime.datetime.now().strftime("%H:%M:%S")
-                    send_message(
-                        youtube, live_chat_id, f"{author}さん、今は {now} です！"
-                    )
+                    response_text = f"{author}さん、今は {now} です！"
+                    send_message(youtube, live_chat_id, response_text)
+                elif text.startswith("!占い"): # ★★★ 6. !占いコマンドを追加
+                    fortunes = ["大吉 ✨", "中吉 😊", "小吉 🙂", "吉 😉", "末吉 🤔", "凶 😥", "大凶 😱"]
+                    result = random.choice(fortunes)
+                    response_text = f"{author}さんの今日の運勢は...【{result}】です！"
+                    send_message(youtube, live_chat_id, response_text)
                 else:
-                    response = generate_response(text)
-                    send_message(youtube, live_chat_id, f"{author}さん：{response}")
+                    response_text = generate_response(text)
+                    send_message(youtube, live_chat_id, f"{author}さん：{response_text}")
+                
+                # Botが何か応答したら、その内容をログに記録
+                if response_text:
+                    append_log(author, text, response_text) # ★★★ 5. ログを記録
 
             time.sleep(5)
 
@@ -59,27 +78,21 @@ def monitor_live_stream():
 
 
 def is_live_ended(youtube, video_id: str) -> bool:
-    """
-    ライブ配信が終了しているか確認
-    Returns True if live has ended
-    """
     try:
         video_details = (
             youtube.videos().list(part="liveStreamingDetails", id=video_id).execute()
         )
-
+        if not video_details.get("items"):
+            return True # 動画情報が取得できなければ終了とみなす
+            
         details = video_details["items"][0]["liveStreamingDetails"]
-        end_time = details.get(
-            "actualEndTime"
-        )  # ISO8601形式: e.g. 2024-06-24T12:45:00Z
-
-        return end_time is not None
+        return details.get("actualEndTime") is not None
     except Exception as e:
         logging.warning(f"終了チェック中にエラー: {e}")
-        return False
+        return False # 不明なエラーの場合は続行させる
 
+# 以下のログ関連の関数はそのまま
 chat_log_cache = []
-
 
 def append_log(author: str, text: str, response: str):
     chat_log_cache.append(
@@ -92,7 +105,6 @@ def append_log(author: str, text: str, response: str):
     )
     if len(chat_log_cache) > 50:
         chat_log_cache.pop(0)
-
 
 def get_latest_logs():
     return chat_log_cache
